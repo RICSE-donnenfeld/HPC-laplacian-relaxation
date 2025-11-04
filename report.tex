@@ -100,7 +100,7 @@ for (int j = 1; j < n - 1; j++) {
 
 
 \subsection{Matrix index access swapping}
-Changing the way data from the matrices is accessed so that less memory fetches are made. This is a simple for loop swap.
+Changing the way data from the matrices is accessed so that less memory fetches are made (Cache is reused since fetches bring contiguous blocks of memory). This makes a big difference because the first scenario generates the most possible amount of cache misses, and reordering the loops generates the most hits. 
 
 \begin{lstlisting}[language=C, caption=initial\_code.c]
 for ( i=1; i < m-1; i++ )
@@ -161,6 +161,28 @@ Anew[idx] = 0.25f * (A[idx + 1] + A[idx - 1] +
 
 \section{Conclusion}
 
-The initial execution time was about 90 seconds. Through these different optimizations, while keeping the same initial problem values, we managed to get it down to 0.6 seconds.
+The initial execution time was about 95 seconds. Through these different optimizations, while keeping the same initial problem values, we managed to get it down to 0.61 seconds which is 157 times faster.
+
+Extra things to notice :
+\begin{itemize}
+    \item CPU used went from 1 to 5.8
+    \item Instruction throughput went from around 650M/s to 14G/s
+\end{itemize}
+
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{LaplaceUnoptimized.png}
+        \caption{Initial version runtime}
+        \label{fig:init}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{LaplaceOptimized.png}
+        \caption{Optimized version runtime}
+        \label{fig:opt}
+    \end{minipage}
+\end{figure}
 
 \end{document}
