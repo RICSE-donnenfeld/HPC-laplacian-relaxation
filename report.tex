@@ -1,0 +1,166 @@
+\documentclass[10pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[margin=1.8cm]{geometry}
+
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{orange},
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny, 
+  breaklines=true,
+  captionpos=b
+}
+
+\title{Laplacian relaxation optimization}
+\author{DIETZ T., JABER A., DONNENFELD T.}
+\date{04 November 2025}
+
+\begin{document}
+
+\maketitle
+
+
+
+\section{Algorithmic Changes}
+
+
+
+
+\subsection{Matrix Update}
+The original implementation copied the new array into the old one element by element:
+
+\begin{lstlisting}[language=C, caption=initial\_code.c -- full matrix copy]
+void laplace_copy(double *A, double *Anew, int n, int m) {
+    for (int j = 0; j < n; j++) {
+        for (int i = 0; i < m; i++) {
+            A[j*m + i] = Anew[j*m + i];
+        }
+    }
+}
+\end{lstlisting}
+
+A better version is to simply swap the pointers to avoid the whole copy process. We just have to be careful with the borders of the uninitialized matrix, which by default have not been set to their constant values. 
+
+\begin{lstlisting}[language=C, caption=final\_code.c -- pointer swap]
+double *Atmp = A;
+A = Anew;
+Anew = Atmp;
+\end{lstlisting}
+
+This change prevents an entire pass over the matrix for each iteration.
+
+
+
+
+\subsection{Error Computation}
+In the initial implementation, the error was computed in a separate function, requiring a full matrix reading after each iteration.
+
+
+\begin{lstlisting}[language=C, caption=initial\_code.c -- separate error computation]
+double laplace_error(double *A, double *Anew, int n, int m) {
+    double error = 0.0;
+    for (int j = 1; j < n - 1; j++) {
+        for (int i = 1; i < m - 1; i++) {
+            error = fmax(error, fabs(Anew[j*m + i] - A[j*m + i]));
+        }
+    }
+    return error;
+}
+\end{lstlisting}
+
+\begin{minipage}{\textwidth}
+In the optimized version, the error is computed directly during the relaxation step, removing the need for an extra matrix pass:
+
+
+\begin{lstlisting}[language=C, caption=final\_code.c -- integrated error computation]
+#pragma omp parallel for reduction(max:error) collapse(2)
+for (int j = 1; j < n - 1; j++) {
+    for (int i = 1; i < m - 1; i++) {
+        Anew[j*m + i] = 0.25f * (A[j*m + i + 1] + A[j*m + i - 1] +
+                                 A[(j-1)*m + i] + A[(j+1)*m + i]);
+        error = fmaxf(error, fabsf(Anew[j*m + i] - A[j*m + i]));
+    }
+}
+\end{lstlisting}
+\end{minipage}
+
+
+
+\section{Code-Level Optimizations}
+
+
+
+
+\subsection{Matrix index access swapping}
+Changing the way data from the matrices is accessed so that less memory fetches are made. This is a simple for loop swap.
+
+\begin{lstlisting}[language=C, caption=initial\_code.c]
+for ( i=1; i < m-1; i++ )
+  for ( j=1; j < n-1; j++ )
+    out[j*m+i]= stencil(in[j*m+i+1], in[j*m+i-1], in[(j-1)*m+i], in[(j+1)*m+i]);
+\end{lstlisting}
+
+\begin{lstlisting}[language=C, caption=final\_code.c]
+for ( j=1; j < n-1; j++ ) {
+  for ( i=1; i < m-1; i++ ) {  // i moves in the inner loop
+    //...
+}
+\end{lstlisting}
+
+
+
+
+
+\subsection{Parallelization with OpenMP}
+The optimized version introduces OpenMP directives to parallelize both the computation and the error reduction step:
+
+\begin{lstlisting}[language=C, caption=final\_code.c -- OpenMP parallel loop]
+#pragma omp parallel for reduction(max:error) collapse(2)
+for (int j = 1; j < n - 1; j++) {
+    for (int i = 1; i < m - 1; i++) {
+        // Laplace update + error calculation
+    }
+}
+\end{lstlisting}
+
+
+
+
+\subsection{Division Replacement}
+Replacing divisions with multiplications improves performance by avoiding expensive floating-point division operations:
+
+\begin{lstlisting}[language=C, caption=initial\_code.c]
+Anew[j*m + i] = (A[j*m + i + 1] + A[j*m + i - 1] +
+                 A[(j-1)*m + i] + A[(j+1)*m + i]) / 4.0;
+\end{lstlisting}
+
+\begin{lstlisting}[language=C, caption=final\_code.c]
+Anew[j*m + i] = (A[j*m + i + 1] + A[j*m + i - 1] +
+                 A[(j-1)*m + i] + A[(j+1)*m + i]) * 0.25f;
+\end{lstlisting}
+
+\subsection{Index Precomputation}
+Avoiding repeated multiplications inside the inner loop reduces instruction count:
+
+\begin{lstlisting}[language=C, caption=final\_code.c -- precomputed indices]
+int idx = j * m + i;
+Anew[idx] = 0.25f * (A[idx + 1] + A[idx - 1] +
+                     A[idx - m] + A[idx + m]);
+\end{lstlisting}
+
+
+
+
+\section{Conclusion}
+
+The initial execution time was about 90 seconds. Through these different optimizations, while keeping the same initial problem values, we managed to get it down to 0.6 seconds.
+
+\end{document}
